@@ -5,6 +5,9 @@ import oauth.signpost.OAuthConsumer;
 import oauth.signpost.OAuthProvider;
 import oauth.signpost.commonshttp.CommonsHttpOAuthConsumer;
 import oauth.signpost.commonshttp.CommonsHttpOAuthProvider;
+import twitter4j.Twitter;
+import twitter4j.TwitterFactory;
+import twitter4j.auth.AccessToken;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -57,6 +60,9 @@ public class PrepareRequestTokenActivity extends Activity {
                     .execute(uri);
             finish();
         }
+        else {
+            System.out.println("not in if");
+        }
     }
 
     public class RetrieveAccessTokenTask extends AsyncTask<Uri, Void, Void> {
@@ -91,15 +97,25 @@ public class PrepareRequestTokenActivity extends Activity {
                 edit.putString(OAuth.OAUTH_TOKEN, consumer.getToken());
                 edit.putString(OAuth.OAUTH_TOKEN_SECRET,
                         consumer.getTokenSecret());
+                
                 edit.commit();
 
                 String token = prefs.getString(OAuth.OAUTH_TOKEN, "");
                 String secret = prefs.getString(OAuth.OAUTH_TOKEN_SECRET, "");
 
                 consumer.setTokenWithSecret(token, secret);
+                
+                AccessToken a = new AccessToken(token, secret);
+                Twitter twitter = new TwitterFactory().getInstance();
+                twitter.setOAuthConsumer(Constants.CONSUMER_KEY,
+                        Constants.CONSUMER_SECRET);
+                twitter.setOAuthAccessToken(a);
+                
+                // save authorized user id in shared prefs
+                edit.putLong("currentUserId", twitter.getId());
+                edit.commit();
+                
                 context.startActivity(new Intent(context, MainActivity.class));
-
-                executeAfterAccessTokenRetrieval();
 
                 Log.i(TAG, "OAuth - Access Token Retrieved");
 
@@ -110,14 +126,6 @@ public class PrepareRequestTokenActivity extends Activity {
             return null;
         }
 
-        private void executeAfterAccessTokenRetrieval() {
-            String msg = getIntent().getExtras().getString("tweet_msg");
-            try {
-                TwitterUtils.sendTweet(prefs, msg);
-            } catch (Exception e) {
-                Log.e(TAG, "OAuth - Error sending to Twitter", e);
-            }
-        }
     }
 
 }

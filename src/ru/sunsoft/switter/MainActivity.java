@@ -1,33 +1,41 @@
 package ru.sunsoft.switter;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 
-import com.nostra13.universalimageloader.core.ImageLoader;
-import com.nostra13.universalimageloader.core.ImageLoaderConfiguration;
-
 import oauth.signpost.OAuth;
-import twitter4j.Twitter;
-import twitter4j.TwitterException;
-import twitter4j.TwitterFactory;
-import twitter4j.auth.AccessToken;
+import ru.sunsoft.switter.NewTweetDialog.NewTweetDialogListener;
+import ru.sunsoft.switter.TweetAdapter.onTweetClickListener;
+import twitter4j.Status;
+import android.app.FragmentManager;
 import android.app.ListActivity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.preference.PreferenceManager;
+import android.view.LayoutInflater;
 import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
+import android.widget.AbsListView;
+import android.widget.AbsListView.OnScrollListener;
 import android.widget.Toast;
 
-public class MainActivity extends ListActivity {
+public class MainActivity extends ListActivity implements onTweetClickListener,
+        NewTweetDialogListener, TaskFragment.TaskCallbacks {
+
     private SharedPreferences prefs;
-    private List<Tweet> tweetList;
+    private TweetAdapter ta;
+    private long id;
+    private int page = 1;
+    private int userStatusesCount;
+    private TaskFragment mTaskFragment;
+    private MenuItem refreshButton;
+
     private final Handler mTwitterHandler = new Handler();
 
     final Runnable mUpdateTwitterNotification = new Runnable() {
@@ -41,13 +49,72 @@ public class MainActivity extends ListActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
+
+        FragmentManager fm = getFragmentManager();
+        mTaskFragment = (TaskFragment) fm.findFragmentByTag("task");
+
+        if (getIntent() != null) {
+            this.id = getIntent().getLongExtra("userId",
+                    prefs.getLong("id", -1));
+        }
+
         getActionBar().setDisplayShowTitleEnabled(false);
-        new DownloadTimeline(this).execute();
+        getActionBar().setHomeButtonEnabled(true);
+        getActionBar().setIcon(R.drawable.home);
+        ta = new TweetAdapter(this, new ArrayList<Status>());
+
+        if (mTaskFragment == null) {
+            mTaskFragment = new TaskFragment();
+            Bundle b = new Bundle();
+            b.putLong("userId", id);
+            mTaskFragment.setArguments(b);
+            fm.beginTransaction().add(mTaskFragment, "task").commit();
+        } else {
+            ta.addAll(mTaskFragment.getTweetList());
+            userStatusesCount = mTaskFragment.getUserCount();
+        }
+
+        setListAdapter(ta);
+
+        getListView().setOnScrollListener(new OnScrollListener() {
+
+            @Override
+            public void onScrollStateChanged(AbsListView view, int scrollState) {
+            }
+
+            @Override
+            public void onScroll(AbsListView view, int firstVisibleItem,
+                    int visibleItemCount, int totalItemCount) {
+
+                int lastInScreen = firstVisibleItem + visibleItemCount;
+                if ((lastInScreen == totalItemCount)
+                        && !mTaskFragment.isRunning()) {
+                    runOnUiThread(loadMoreListItems);
+                }
+            }
+        });
     }
+
+    // Runnable to load the items
+    private Runnable loadMoreListItems = new Runnable() {
+        @Override
+        public void run() {
+
+            if (page * 20 < userStatusesCount) {
+                page++;
+                mTaskFragment.loadMoreTweets(page);
+            }
+        }
+    };
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
+        System.out.println("onCreateOptMenu");
         getMenuInflater().inflate(R.menu.main, menu);
+        refreshButton = menu.findItem(R.id.refresh);
+        if (mTaskFragment.isRunning()) {
+            refreshButton.setIcon(R.drawable.cancel);
+        }
         return super.onCreateOptionsMenu(menu);
     }
 
@@ -57,77 +124,51 @@ public class MainActivity extends ListActivity {
             case R.id.newMessage:
                 goToNewMessageScreen();
                 return true;
+            case R.id.Exit:
+                clearCredentials();
+                return true;
+            case R.id.refresh:
+                onRefresh();
+                return true;
+            case android.R.id.home:
+                openHomeTimeline();
+                return true;
             default:
                 return super.onOptionsItemSelected(item);
         }
     }
 
-    private void goToNewMessageScreen() {
-        Intent i = new Intent(this, NewMessageActivity.class);
-        i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+    private void onRefresh() {
+        if (!mTaskFragment.isRunning()) {
+            clearScreen();
+            mTaskFragment.loadMoreTweets(1);
+        } else {
+            mTaskFragment.cancelDownload();
+        }
+    }
+
+    private void redrawRefreshButton() {
+        if (refreshButton == null)
+            return;
+        if (mTaskFragment.isRunning()) {
+            refreshButton.setIcon(R.drawable.cancel);
+        } else
+            refreshButton.setIcon(R.drawable.refresh);
+    }
+
+    private void openHomeTimeline() {
+        long authUserid = prefs.getLong("currentUserId", -1);
+        if (authUserid == -1)
+            return;
+        Intent i = new Intent(getApplicationContext(), MainActivity.class);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        i.putExtra("id", authUserid);
         startActivity(i);
     }
 
-    private class DownloadTimeline extends
-            AsyncTask<Void, Void, List<twitter4j.Status>> {
-
-        Context context;
-
-        public DownloadTimeline(Context context) {
-            this.context = context;
-        }
-
-        @Override
-        protected List<twitter4j.Status> doInBackground(Void... params) {
-
-            String token = prefs.getString(OAuth.OAUTH_TOKEN, "");
-            String secret = prefs.getString(OAuth.OAUTH_TOKEN_SECRET, "");
-
-            AccessToken a = new AccessToken(token, secret);
-            Twitter twitter = new TwitterFactory().getInstance();
-            twitter.setOAuthConsumer(Constants.CONSUMER_KEY,
-                    Constants.CONSUMER_SECRET);
-            twitter.setOAuthAccessToken(a);
-            List<twitter4j.Status> statuses = null;
-            try {
-                statuses = twitter.getHomeTimeline();
-            } catch (TwitterException e) {
-                e.printStackTrace();
-            }
-            return statuses;
-        }
-
-        @Override
-        protected void onPostExecute(List<twitter4j.Status> result) {
-            tweetList = new ArrayList<Tweet>();
-            for (twitter4j.Status status : result) {
-                tweetList.add(new Tweet(status.getUser().getName(), status
-                        .getText(), status.getCreatedAt().toString(), status.getUser().getBiggerProfileImageURL()));
-            }
-            TweetAdapter ta = new TweetAdapter(context, tweetList);
-            setListAdapter(ta);
-        }
-
-    }
-
-    private String getTweetMsg() {
-        return "Tweeting from Android App at " + new Date().toLocaleString();
-    }
-
-    public void sendTweet() {
-        Thread t = new Thread() {
-            public void run() {
-
-                try {
-                    TwitterUtils.sendTweet(prefs, getTweetMsg());
-                    mTwitterHandler.post(mUpdateTwitterNotification);
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
-            }
-
-        };
-        t.start();
+    private void goToNewMessageScreen() {
+        new NewTweetDialog().show(getFragmentManager(), "tag");
     }
 
     private void clearCredentials() {
@@ -137,6 +178,66 @@ public class MainActivity extends ListActivity {
         edit.remove(OAuth.OAUTH_TOKEN);
         edit.remove(OAuth.OAUTH_TOKEN_SECRET);
         edit.commit();
+        clearScreen();
+    }
+
+    private void clearScreen() {
+        ta.clear();
+        ta.notifyDataSetChanged();
+        page = 1;
+        mTaskFragment.clearTweets();
+    }
+
+    @Override
+    public void onTweetClick(Status tweet) {
+        openUserTimeline(tweet.getUser().getId());
+    }
+
+    public void openUserTimeline(long id) {
+        Intent i = new Intent(getApplicationContext(), MainActivity.class);
+        i.putExtra("userId", id);
+        startActivity(i);
+    }
+
+    @Override
+    public void onSend(final String message) {
+        Thread t = new Thread() {
+            public void run() {
+
+                try {
+                    TwitterUtils.sendTweet(prefs, message);
+                    mTwitterHandler.post(mUpdateTwitterNotification);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+        };
+        t.start();
+    }
+
+    @Override
+    public void onPreExecute() {
+        redrawRefreshButton();
+    }
+
+    @Override
+    public void onCancelled() {
+        redrawRefreshButton();
+        Toast.makeText(this, getString(R.string.network_error),
+                Toast.LENGTH_LONG).show();
+    }
+
+    @Override
+    public void onPostExecute(List<twitter4j.Status> result) {
+        redrawRefreshButton();
+        userStatusesCount = mTaskFragment.getUserCount();
+        ta.addAll(result);
+        ta.notifyDataSetChanged();
+    }
+
+    @Override
+    public void onError(String errorMessage) {
+        Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show();
     }
 
 }
@@ -150,9 +251,15 @@ public class MainActivity extends ListActivity {
 //
 // * авторизация
 // * экран с лентой авторизованного юзера
-// TODO * экран со списком твитов юзера, по которому кликнули в ленте
-// TODO + можно асинхронно подгружать аватарки в список
+// * экран со списком твитов юзера, по которому кликнули в ленте
+// + можно асинхронно подгружать аватарки в список
 // + можно диалог с созданием нового твита
+
+// проверка подключения к интернету
+// проверить переходы по экранам
+// проверять авторизацию перед экранной лентой
+// анимации загрузки и проч
+// TODO refactor
 //
 // Спасибо,
 // Лейсан, Flatstack

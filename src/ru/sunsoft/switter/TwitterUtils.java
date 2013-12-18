@@ -8,8 +8,8 @@ import twitter4j.auth.AccessToken;
 import android.content.SharedPreferences;
 
 public class TwitterUtils {
-
-    public static boolean isAuthenticated(SharedPreferences prefs) {
+    
+    public static boolean isAuthenticated(SharedPreferences prefs) throws TwitterException {
 
         String token = prefs.getString(OAuth.OAUTH_TOKEN, "");
         String secret = prefs.getString(OAuth.OAUTH_TOKEN_SECRET, "");
@@ -21,9 +21,14 @@ public class TwitterUtils {
         twitter.setOAuthAccessToken(a);
 
         try {
-            twitter.getAccountSettings();
+            twitter.getId();
             return true;
         } catch (TwitterException e) {
+            System.out.println(e.toString());
+            System.out.println("XYU" + e.getErrorCode());
+            if(e.getErrorCode() == 88){
+                throw e;
+            }
             return false;
         }
     }

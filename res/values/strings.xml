@@ -9,5 +9,10 @@
     <string name="sing_in">Sing In</string>
     <string name="new_message">New Message</string>
     <string name="send">Send</string>
+    <string name="exit">Sign out</string>
+    <string name="loading_progress">Loading tweets...</string>
+    <string name="network_error">Unable to download!\nCheck your connection</string>
+    <string name="refresh">Refresh</string>   
+    <string name="rate_limit_exceeded">Rate limit exceeded. Please try again later.</string>
 
 </resources>
