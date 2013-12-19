@@ -116,6 +116,7 @@ public class TaskFragment extends Fragment {
             AsyncTask<Void, Void, List<twitter4j.Status>> {
 
         private int page;
+        private String errorMessage = "";
 
         @Override
         protected void onPreExecute() {
@@ -173,11 +174,8 @@ public class TaskFragment extends Fragment {
                     startActivity(i);
                 }
             } catch (TwitterException e) {
-                if (e.getErrorCode() == 88) {
-                    mCallbacks.onError(getString(R.string.rate_limit_exceeded));
-                }
+                errorMessage = e.getErrorMessage();
             }
-
             return statuses;
         }
 
@@ -193,6 +191,9 @@ public class TaskFragment extends Fragment {
         protected void onPostExecute(List<twitter4j.Status> result) {
             mRunning = false;
             if (mCallbacks != null) {
+                if(!errorMessage.isEmpty()){
+                    mCallbacks.onError(errorMessage);
+                }
                 tweetList.addAll(result);
                 mCallbacks.onPostExecute(result);
             }

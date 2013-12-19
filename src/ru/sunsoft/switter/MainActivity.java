@@ -161,8 +161,8 @@ public class MainActivity extends ListActivity implements onTweetClickListener,
         if (authUserid == -1)
             return;
         Intent i = new Intent(getApplicationContext(), MainActivity.class);
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         i.putExtra("id", authUserid);
         startActivity(i);
     }

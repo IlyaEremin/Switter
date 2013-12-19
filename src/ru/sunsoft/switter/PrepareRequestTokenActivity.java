@@ -114,8 +114,9 @@ public class PrepareRequestTokenActivity extends Activity {
                 // save authorized user id in shared prefs
                 edit.putLong("currentUserId", twitter.getId());
                 edit.commit();
-                
-                context.startActivity(new Intent(context, MainActivity.class));
+                Intent i = new Intent(context, MainActivity.class);
+                i.setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                context.startActivity(i);
 
                 Log.i(TAG, "OAuth - Access Token Retrieved");
 
